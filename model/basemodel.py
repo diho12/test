@@ -154,12 +154,12 @@ if __name__ == "__main__":
     train_forecast_model(
         csv_path = DATA_DIR / "hk_oyster_quarterly_21vars.csv",
         features = OYSTER_FEATURES,
-        model_out_path = OUTPUT_DIR / "hk_oyster_forecast_model.pkl"
+        model_out_path = OUTPUT_DIR / "hk_oyster_finetuned.pkl"
     )
 
 
     train_forecast_model(
         csv_path = DATA_DIR / "hk_cobia_quarterly_21vars.csv",
         features = COBIA_FEATURES,
-        model_out_path = OUTPUT_DIR / "hk_cobia_forecast_model.pkl"
+        model_out_path = OUTPUT_DIR / "hk_cobia_finetuned.pkl"
     )
