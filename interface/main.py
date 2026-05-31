@@ -18,7 +18,7 @@ from utils.hsi import compute_hsi
 
 st.title("🌊 Dự báo môi trường nước cho Cá giò và Hàu khu vực biển Quảng Ninh")
 
-
+#==================== LOAD DATA ====================
 # Load data of Quảng Ninh
 @st.cache_data
 def load_data():
@@ -43,7 +43,6 @@ def load_data():
 
     return df
 
-
 @st.cache_data
 def load_radius_data(species):
     """Load radius data for the specified species"""
@@ -56,6 +55,7 @@ def load_radius_data(species):
         return None
 
 
+#==================== CALCULATE HSI ====================
 @st.cache_data
 def calculate_hsi_for_all_stations(species, year, quarter, station_list):
     """Calculate HSI for all stations for a specific year and quarter - optimized version"""
@@ -106,7 +106,7 @@ df = load_data()
 # Get the list of unique monitoring stations
 stations = df[["Station", "Station_Name", "lat", "lon"]].drop_duplicates()
 
-# Forecast parameters selection
+#==================== FORECAST PARAMETERS SELECTION ====================
 st.header("🔮 Tham số dự báo")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -128,6 +128,10 @@ with col4:
         "Số quý dự báo", min_value=1, max_value=20, value=4, step=1
     )
 
+# Initialize has_data state (After HSI calculation, save the data to session state)
+if "has_data" not in st.session_state:
+    st.session_state.has_data = False
+    
 # Initialize forecast trigger state
 if "forecast_triggered" not in st.session_state:
     st.session_state.forecast_triggered = False
@@ -142,12 +146,7 @@ with col_btn1:
     )
     if calculate_forecast_btn:
         st.session_state.forecast_triggered = True
-        st.session_state.last_forecast_params = {
-            "species": species,
-            "start_year": start_year,
-            "start_quarter": start_quarter,
-            "n_quarters": n_quarters,
-        }
+        #st.session_state.forecast_triggered = False
 
 with col_btn2:
     st.caption(
@@ -158,6 +157,7 @@ with col_btn2:
 
 st.divider()
 
+#==================== MAP ====================
 # Display the map
 st.header("🗺 Bản đồ các trạm quan trắc môi trường")
 
@@ -184,6 +184,9 @@ if st.session_state.forecast_triggered:
         hsi_data = calculate_hsi_for_all_stations(
             species, map_year, map_quarter, stations_unique
         )
+    st.session_state.forecast_triggered = False
+    st.session_state.has_data = True
+    st.session_state.hsi_data = hsi_data
 
 # Create Folium map
 center_lat = stations["lat"].mean()
@@ -256,9 +259,9 @@ for idx, row in stations.iterrows():
     hsi_tooltip = ""
     marker_color = "#C81E1E"  # Default red
 
-    if row["Station"] in hsi_data:
-        hsi_value = hsi_data[row["Station"]]["HSI"]
-        hsi_level = hsi_data[row["Station"]]["HSI_Level"]
+    if st.session_state.get("has_data") and row["Station"] in st.session_state.hsi_data:
+        hsi_value = st.session_state.hsi_data[row["Station"]]["HSI"]
+        hsi_level = st.session_state.hsi_data[row["Station"]]["HSI_Level"]
 
         hsi_info = f"""
         <p style='margin: 5px 0;'><b>HSI (Q{map_quarter}/{map_year}):</b> {hsi_value:.3f}</p>
@@ -304,7 +307,7 @@ for idx, row in stations.iterrows():
     ).add_to(m)
 
 # Add legend to map
-if st.session_state.forecast_triggered and len(hsi_data) > 0:
+if st.session_state.has_data :
     legend_html = """
     <div style="
         position: absolute;
@@ -328,7 +331,7 @@ if st.session_state.forecast_triggered and len(hsi_data) > 0:
     """
 
     m.get_root().html.add_child(folium.Element(legend_html))
-elif not st.session_state.forecast_triggered:
+elif not st.session_state.has_data:
     # Show placeholder message
     st.warning("⚠️ Bấm nút '🚀 Tính toán dự báo' ở trên để hiển thị bản đồ")
 
@@ -368,7 +371,7 @@ st.divider()
 # Station selection for HSI calculation (placed right after map)
 st.subheader("🎯 Tính toán chỉ số HSI chi tiết cho trạm")
 
-if not st.session_state.forecast_triggered:
+if not st.session_state.has_data:
     st.warning(
         "⚠️ Vui lòng bấm nút '🚀 Tính toán dự báo' ở trên trước khi chọn trạm chi tiết."
     )
@@ -442,7 +445,7 @@ else:
 
 # Calculate and display HSI when button is clicked or station is selected
 if (
-    st.session_state.forecast_triggered
+    st.session_state.has_data
     and selected_station
     and (
         calculate_btn
