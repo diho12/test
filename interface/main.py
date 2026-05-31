@@ -164,9 +164,30 @@ st.header("🗺 Bản đồ các trạm quan trắc môi trường")
 # Map display settings - AUTOMATICALLY SYNC WITH FORECAST PARAMS
 st.subheader("⚙️ Cài đặt hiển thị bản đồ")
 
-# Automatically sync map parameters with forecast parameters
-map_year = start_year
-map_quarter = start_quarter
+# Set year and quarter for map display (automatically synced with forecast parameters)
+col_year, col_quarter = st.columns([2, 1])
+
+with col_year:
+    map_year = st.number_input(
+        "Năm bắt đầu", min_value=start_year, max_value=start_year + n_quarters - 1, value=start_year, step=1
+    )
+
+with col_quarter:
+    map_quarter = st.selectbox(
+        "Chọn quý để hiển thị:",
+        options=[1, 2, 3, 4],
+        index=0
+    )
+# Check if map display time is valid
+start_timeline = (start_year * 4) + start_quarter
+map_timeline = (map_year * 4) + map_quarter
+
+if map_timeline < start_timeline:
+    st.error(
+        f"❌ **Thời gian hiển thị không hợp lệ!** "
+        f"Mốc thời gian được chọn (Q{map_quarter}/{map_year}) nhỏ hơn thời gian bắt đầu cấu hình dự báo (Q{start_quarter}/{start_year}). "
+        f"Vui lòng chọn mốc thời gian bằng hoặc lớn hơn."
+    )
 
 st.info(
     f"📍 **Bản đồ hiển thị kết quả dự báo tại Q{map_quarter}/{map_year}** (quý bắt đầu trong tham số dự báo). "
