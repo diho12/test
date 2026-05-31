@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pathlib
 import matplotlib.pyplot as plt
-import seaborn as sns
+
 
 def compute_hsi(df_forecast, species):
     """
@@ -21,50 +21,49 @@ def compute_hsi(df_forecast, species):
     """
     HSI_RULES = {
         "oyster": {
-            "DO":          {"min_val": 5},
+            "DO": {"min_val": 5},
             "Temperature": {"low": 20, "high": 28},
-            "pH":          {"low": 7.5, "high": 8.0},
-            "Salinity":    {"low": 20, "high": 25},
-            "Alkalinity":  {"low": 60, "high": 180},
-            "Transparency":{"low": 20, "high": 50},
-            "NH3":         {"max_val": 0.3},
-            "H2S":         {"max_val": 0.05},
-            "BOD5":        {"max_val": 50},
-            "COD":         {"max_val": 150},
-            "Coliform":    {"max_val": 5000},
-            "TSS":         {"max_val": 50},
-            "CN":          {"max_val": 0.1},
-            "As":          {"max_val": 0.02},
-            "Cd":          {"max_val": 0.005},
-            "Pb":          {"max_val": 0.05},
-            "Cu":          {"max_val": 0.2},
-            "Hg":          {"max_val": 0.001},
-            "Zn":          {"max_val": 0.5},
-            "Total_Cr":    {"max_val": 0.1},
+            "pH": {"low": 7.5, "high": 8.0},
+            "Salinity": {"low": 20, "high": 25},
+            "Alkalinity": {"low": 60, "high": 180},
+            "Transparency": {"low": 20, "high": 50},
+            "NH3": {"max_val": 0.3},
+            "H2S": {"max_val": 0.05},
+            "BOD5": {"max_val": 50},
+            "COD": {"max_val": 150},
+            "Coliform": {"max_val": 5000},
+            "TSS": {"max_val": 50},
+            "CN": {"max_val": 0.1},
+            "As": {"max_val": 0.02},
+            "Cd": {"max_val": 0.005},
+            "Pb": {"max_val": 0.05},
+            "Cu": {"max_val": 0.2},
+            "Hg": {"max_val": 0.001},
+            "Zn": {"max_val": 0.5},
+            "Total_Cr": {"max_val": 0.1},
         },
-
         "cobia": {
-            "DO":          {"min_val": 6},
+            "DO": {"min_val": 6},
             "Temperature": {"low": 24, "high": 28},
-            "pH":          {"low": 8.0, "high": 8.5},
-            "Salinity":    {"low": 27, "high": 33},
-            "Alkalinity":  {"low": 60, "high": 180},
-            "Transparency":{"low": 20, "high": 50},
-            "NH3":         {"max_val": 0.1},
-            "PO4":         {"max_val": 0.2},
-            "BOD5":        {"max_val": 50},
-            "COD":         {"max_val": 150},
-            "Coliform":    {"max_val": 5000},
-            "TSS":         {"max_val": 50},
-            "CN":          {"max_val": 0.1},
-            "As":          {"max_val": 0.02},
-            "Cd":          {"max_val": 0.005},
-            "Pb":          {"max_val": 0.05},
-            "Cu":          {"max_val": 0.2},
-            "Hg":          {"max_val": 0.001},
-            "Zn":          {"max_val": 0.5},
-            "Total_Cr":    {"max_val": 0.1},
-        }
+            "pH": {"low": 8.0, "high": 8.5},
+            "Salinity": {"low": 27, "high": 33},
+            "Alkalinity": {"low": 60, "high": 180},
+            "Transparency": {"low": 20, "high": 50},
+            "NH3": {"max_val": 0.1},
+            "PO4": {"max_val": 0.2},
+            "BOD5": {"max_val": 50},
+            "COD": {"max_val": 150},
+            "Coliform": {"max_val": 5000},
+            "TSS": {"max_val": 50},
+            "CN": {"max_val": 0.1},
+            "As": {"max_val": 0.02},
+            "Cd": {"max_val": 0.005},
+            "Pb": {"max_val": 0.05},
+            "Cu": {"max_val": 0.2},
+            "Hg": {"max_val": 0.001},
+            "Zn": {"max_val": 0.5},
+            "Total_Cr": {"max_val": 0.1},
+        },
     }
 
     def _suitability_score(x, low=None, high=None, max_val=None, min_val=None):
@@ -89,7 +88,6 @@ def compute_hsi(df_forecast, species):
             return min(1.0, x / min_val)
 
         return 0.0
-
 
     species = species.lower()
     if species not in HSI_RULES:
@@ -139,6 +137,7 @@ def compute_hsi(df_forecast, species):
 
     return df
 
+
 if __name__ == "__main__":
     # Test / plot phân phối HSI (chỉ chạy khi chạy file trực tiếp, không chạy khi import)
     BASE_DIR = pathlib.Path(__file__).resolve().parent
@@ -184,15 +183,27 @@ if __name__ == "__main__":
         kde=True,
         stat="density",
         color="steelblue",
-        edgecolor="black"
+        edgecolor="black",
     )
 
     plt.axvline(0.5, color="gray", linestyle="--", linewidth=1, label="HSI = 0.5")
     plt.axvline(0.75, color="orange", linestyle="--", linewidth=1, label="HSI = 0.75")
     plt.axvline(0.85, color="green", linestyle="--", linewidth=1, label="HSI = 0.85")
 
-    plt.axvline(min_hsi, color="red", linestyle=":", linewidth=1.5, label=f"Min HSI = {min_hsi:.3f}")
-    plt.axvline(max_hsi, color="purple", linestyle=":", linewidth=1.5, label=f"Max HSI = {max_hsi:.3f}")
+    plt.axvline(
+        min_hsi,
+        color="red",
+        linestyle=":",
+        linewidth=1.5,
+        label=f"Min HSI = {min_hsi:.3f}",
+    )
+    plt.axvline(
+        max_hsi,
+        color="purple",
+        linestyle=":",
+        linewidth=1.5,
+        label=f"Max HSI = {max_hsi:.3f}",
+    )
 
     plt.title("Distribution of HSI values (Cobia)", fontsize=13)
     plt.xlabel("HSI")
@@ -218,7 +229,7 @@ if __name__ == "__main__":
         delta_hsi_example,
         color="black",
         linewidth=1.5,
-        label="|ΔHSI|"
+        label="|ΔHSI|",
     )
 
     plt.axhline(0.6 * sigma_hsi, color="green", linestyle="--", label="0.6σ threshold")
