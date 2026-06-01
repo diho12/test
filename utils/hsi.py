@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pathlib
 import matplotlib.pyplot as plt
-
+import seaborn as sns
 
 def compute_hsi(df_forecast, species):
     """

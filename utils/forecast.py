@@ -160,6 +160,7 @@ def predict_future_non_metal_field_for_station(
         model_path = PROJECT_DIR / "model" / "output" / "hk_cobia_finetuned.pkl"
     elif species == "oyster":
         model_path = PROJECT_DIR / "model" / "output" / "hk_oyster_finetuned.pkl"
+        
     # ===== LOAD MODEL + METADATA =====
     model = joblib.load(model_path)
     input_cols, features = joblib.load(
