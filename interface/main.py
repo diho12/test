@@ -16,7 +16,7 @@ from utils.geo import vn2000_to_latlon
 from utils.forecast import predict_for_station
 from utils.hsi import compute_hsi
 
-st.title("🌊 Dự báo môi trường nước cho Cá giò và Hàu khu vực biển Quảng Ninh")
+st.title("Dự báo môi trường nước cho Cá giò và Hàu khu vực biển Quảng Ninh")
 
 #==================== LOAD DATA ====================
 # Load data of Quảng Ninh
@@ -107,7 +107,7 @@ df = load_data()
 stations = df[["Station", "Station_Name", "lat", "lon"]].drop_duplicates()
 
 #==================== FORECAST PARAMETERS SELECTION ====================
-st.header("🔮 Tham số dự báo")
+st.header("Tham số dự báo")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -159,10 +159,10 @@ st.divider()
 
 #==================== MAP ====================
 # Display the map
-st.header("🗺 Bản đồ các trạm quan trắc môi trường")
+st.header("Bản đồ các trạm quan trắc môi trường")
 
 # Map display settings - AUTOMATICALLY SYNC WITH FORECAST PARAMS
-st.subheader("⚙️ Cài đặt hiển thị bản đồ")
+st.subheader("Cài đặt hiển thị bản đồ")
 
 # Set year and quarter for map display (automatically synced with forecast parameters)
 col_year, col_quarter = st.columns([2, 1])
