@@ -18,7 +18,8 @@ from utils.hsi import compute_hsi
 
 st.title("🌊 Dự báo môi trường nước cho Cá giò và Hàu khu vực biển Quảng Ninh")
 
-#==================== LOAD DATA ====================
+
+# ==================== LOAD DATA ====================
 # Load data of Quảng Ninh
 @st.cache_data
 def load_data():
@@ -43,6 +44,7 @@ def load_data():
 
     return df
 
+
 @st.cache_data
 def load_radius_data(species):
     """Load radius data for the specified species"""
@@ -55,7 +57,7 @@ def load_radius_data(species):
         return None
 
 
-#==================== CALCULATE HSI ====================
+# ==================== CALCULATE HSI ====================
 @st.cache_data
 def calculate_hsi_for_all_stations(species, year, quarter, station_list):
     """Calculate HSI for all stations for a specific year and quarter - optimized version"""
@@ -106,7 +108,7 @@ df = load_data()
 # Get the list of unique monitoring stations
 stations = df[["Station", "Station_Name", "lat", "lon"]].drop_duplicates()
 
-#==================== FORECAST PARAMETERS SELECTION ====================
+# ==================== FORECAST PARAMETERS SELECTION ====================
 st.header("🔮 Tham số dự báo")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -117,7 +119,7 @@ with col1:
 
 with col2:
     start_year = st.number_input(
-        "Năm bắt đầu", min_value=2026, max_value=2030, value=2026, step=1
+        "Năm bắt đầu", min_value=2025, max_value=2030, value=2026, step=1
     )
 
 with col3:
@@ -131,7 +133,7 @@ with col4:
 # Initialize has_data state (After HSI calculation, save the data to session state)
 if "has_data" not in st.session_state:
     st.session_state.has_data = False
-    
+
 # Initialize forecast trigger state
 if "forecast_triggered" not in st.session_state:
     st.session_state.forecast_triggered = False
@@ -146,7 +148,7 @@ with col_btn1:
     )
     if calculate_forecast_btn:
         st.session_state.forecast_triggered = True
-        #st.session_state.forecast_triggered = False
+        # st.session_state.forecast_triggered = False
 
 with col_btn2:
     st.caption(
@@ -157,7 +159,7 @@ with col_btn2:
 
 st.divider()
 
-#==================== MAP ====================
+# ==================== MAP ====================
 # Display the map
 st.header("🗺 Bản đồ các trạm quan trắc môi trường")
 
@@ -169,15 +171,15 @@ col_year, col_quarter = st.columns([2, 1])
 
 with col_year:
     map_year = st.number_input(
-        "Năm bắt đầu", min_value=start_year, max_value=start_year + n_quarters - 1, value=start_year, step=1
+        "Năm bắt đầu",
+        min_value=start_year,
+        max_value=start_year + n_quarters - 1,
+        value=start_year,
+        step=1,
     )
 
 with col_quarter:
-    map_quarter = st.selectbox(
-        "Chọn quý để hiển thị:",
-        options=[1, 2, 3, 4],
-        index=0
-    )
+    map_quarter = st.selectbox("Chọn quý để hiển thị:", options=[1, 2, 3, 4], index=0)
 # Check if map display time is valid
 start_timeline = (start_year * 4) + start_quarter
 map_timeline = (map_year * 4) + map_quarter
@@ -328,7 +330,7 @@ for idx, row in stations.iterrows():
     ).add_to(m)
 
 # Add legend to map
-if st.session_state.has_data :
+if st.session_state.has_data:
     legend_html = """
     <div style="
         position: absolute;
