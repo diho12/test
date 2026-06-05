@@ -14,7 +14,7 @@ from streamlit_folium import st_folium
 
 from utils.geo import vn2000_to_latlon
 from utils.forecast import predict_for_station
-from utils.hsi import compute_hsi
+from utils.hsi import compute_hsi, save_hsi_forecast
 
 st.title("🌊 Dự báo môi trường nước cho Cá giò và Hàu khu vực biển Quảng Ninh")
 
@@ -83,6 +83,7 @@ def calculate_hsi_for_all_stations(species, year, quarter, station_list):
                         "HSI": forecast_with_hsi.iloc[0]["HSI"],
                         "HSI_Level": forecast_with_hsi.iloc[0]["HSI_Level"],
                     },
+                    forecast_with_hsi,
                 )
         except:
             pass
@@ -95,9 +96,14 @@ def calculate_hsi_for_all_stations(species, year, quarter, station_list):
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         results = executor.map(calculate_single_station, stations_list)
 
+    hsi_frames = []
     for result in results:
         if result:
             hsi_results[result[0]] = result[1]
+            hsi_frames.append(result[2])
+
+    if hsi_frames:
+        save_hsi_forecast(pd.concat(hsi_frames, ignore_index=True), species=species)
 
     return hsi_results
 
@@ -509,6 +515,7 @@ if (
 
             # Calculate HSI using compute_hsi
             forecast_with_hsi = compute_hsi(forecast_df, species=species)
+            save_hsi_forecast(forecast_with_hsi, species=species)
 
             # Get radius information for each forecasted quarter
             if df_radius is not None:

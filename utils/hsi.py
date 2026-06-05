@@ -3,6 +3,53 @@ import pandas as pd
 import pathlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+import threading
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
+HSI_FORECAST_PATH = (
+    PROJECT_DIR
+    / "data"
+    / "data_quang_ninh"
+    / "qn_trained_data"
+    / "hsi_forecast_merged.csv"
+)
+
+HSI_FORECAST_COLUMNS = [
+    "Station",
+    "Station_Name",
+    "Quarter",
+    "year",
+    "quarter",
+    "species",
+    "X",
+    "Y",
+    "DO",
+    "Temperature",
+    "pH",
+    "Salinity",
+    "NH3",
+    "PO4",
+    "H2S",
+    "BOD5",
+    "COD",
+    "TSS",
+    "Coliform",
+    "Alkalinity",
+    "Transparency",
+    "CN",
+    "As",
+    "Cd",
+    "Pb",
+    "Cu",
+    "Hg",
+    "Zn",
+    "Total_Cr",
+    "HSI",
+    "HSI_Level",
+]
+
+hsi_forecast_lock = threading.RLock()
 
 def compute_hsi(df_forecast, species):
     """
@@ -138,10 +185,91 @@ def compute_hsi(df_forecast, species):
     return df
 
 
+def _add_quarter_date_column(df):
+    df = df.copy()
+    if "Quarter" in df.columns:
+        df["Quarter"] = pd.to_datetime(df["Quarter"], errors="coerce").dt.strftime(
+            "%Y-%m-%d"
+        )
+        return df
+
+    if {"year", "quarter"}.issubset(df.columns):
+        year = pd.to_numeric(df["year"], errors="coerce")
+        quarter = pd.to_numeric(df["quarter"], errors="coerce")
+        month = (quarter - 1) * 3 + 1
+        quarter_date = (
+            year.astype("Int64").astype(str)
+            + "-"
+            + month.astype("Int64").astype(str).str.zfill(2)
+            + "-01"
+        )
+        df["Quarter"] = pd.to_datetime(quarter_date, errors="coerce").dt.strftime(
+            "%Y-%m-%d"
+        )
+
+    return df
+
+
+def prepare_hsi_forecast_for_save(df_hsi, species):
+    """
+    Chuan hoa output HSI forecast thanh mot dong day du:
+    1 tram + 1 quy + 1 loai = 1 ban ghi.
+    """
+    if df_hsi is None or df_hsi.empty:
+        return pd.DataFrame(columns=HSI_FORECAST_COLUMNS)
+
+    df = _add_quarter_date_column(df_hsi)
+    df["species"] = species.lower()
+
+    for c in ["year", "quarter"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
+
+    ordered_cols = [c for c in HSI_FORECAST_COLUMNS if c in df.columns]
+    extra_cols = [c for c in df.columns if c not in ordered_cols]
+    return df[ordered_cols + extra_cols]
+
+
+def load_hsi_forecast(path=HSI_FORECAST_PATH):
+    path = pathlib.Path(path)
+    if not path.exists() or path.stat().st_size == 0:
+        return pd.DataFrame(columns=HSI_FORECAST_COLUMNS)
+    return pd.read_csv(path)
+
+
+def save_hsi_forecast(df_hsi, species, path=HSI_FORECAST_PATH):
+    """
+    Append ket qua HSI forecast vao file merge va ghi de ban ghi trung khoa.
+    Khoa: X, Y, year, quarter, species.
+    """
+    df_new = prepare_hsi_forecast_for_save(df_hsi, species)
+    if df_new.empty:
+        return pathlib.Path(path)
+
+    path = pathlib.Path(path)
+    with hsi_forecast_lock:
+        df_old = load_hsi_forecast(path)
+        df_combined = pd.concat([df_old, df_new], ignore_index=True)
+
+        if "species" in df_combined.columns:
+            df_combined["species"] = df_combined["species"].str.lower()
+
+        key_cols = ["X", "Y", "year", "quarter", "species"]
+        if all(c in df_combined.columns for c in key_cols):
+            df_combined = df_combined.drop_duplicates(subset=key_cols, keep="last")
+
+        ordered_cols = [c for c in HSI_FORECAST_COLUMNS if c in df_combined.columns]
+        extra_cols = [c for c in df_combined.columns if c not in ordered_cols]
+        df_combined = df_combined[ordered_cols + extra_cols]
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df_combined.to_csv(path, index=False)
+
+    return path
+
+
 if __name__ == "__main__":
     # Test / plot phân phối HSI (chỉ chạy khi chạy file trực tiếp, không chạy khi import)
-    BASE_DIR = pathlib.Path(__file__).resolve().parent
-    PROJECT_DIR = BASE_DIR.parent
     DATA_PATH = PROJECT_DIR / "data" / "data_quang_ninh" / "qn_env_clean_ready.csv"
 
     # ===== COMPUTE HSI CHO TOÀN BỘ DỮ LIỆU VÀ TÍNH PHÂN PHỐI NHÃN HSI =====
