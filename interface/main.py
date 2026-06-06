@@ -14,7 +14,7 @@ from streamlit_folium import st_folium
 
 from utils.geo import vn2000_to_latlon
 from utils.forecast import predict_for_station
-from utils.hsi import compute_hsi, save_hsi_forecast
+from utils.hsi import compute_hsi, load_hsi_forecast, save_hsi_forecast
 
 st.title("🌊 Dự báo môi trường nước cho Cá giò và Hàu khu vực biển Quảng Ninh")
 
@@ -58,9 +58,10 @@ def load_radius_data(species):
 
 
 # ==================== CALCULATE HSI ====================
-@st.cache_data
-def calculate_hsi_for_all_stations(species, year, quarter, station_list):
-    """Calculate HSI for all stations for a specific year and quarter - optimized version"""
+def calculate_hsi_for_all_stations(
+    species, start_year, start_quarter, n_quarters, station_list
+):
+    """Calculate and persist HSI for all stations across the requested periods."""
     import concurrent.futures
 
     def calculate_single_station(station_row):
@@ -69,43 +70,55 @@ def calculate_hsi_for_all_stations(species, year, quarter, station_list):
                 species=species,
                 x=station_row["X"],
                 y=station_row["Y"],
-                start_year=year,
-                start_quarter=quarter,
-                n_quarters=1,
+                start_year=start_year,
+                start_quarter=start_quarter,
+                n_quarters=n_quarters,
             )
 
             forecast_with_hsi = compute_hsi(forecast_df, species=species)
 
             if len(forecast_with_hsi) > 0:
-                return (
-                    station_row["Station"],
-                    {
-                        "HSI": forecast_with_hsi.iloc[0]["HSI"],
-                        "HSI_Level": forecast_with_hsi.iloc[0]["HSI_Level"],
-                    },
-                    forecast_with_hsi,
-                )
-        except:
+                return forecast_with_hsi
+        except Exception:
             pass
         return None
 
-    # Use ThreadPoolExecutor for parallel processing
-    hsi_results = {}
     stations_list = station_list.to_dict("records")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         results = executor.map(calculate_single_station, stations_list)
 
-    hsi_frames = []
-    for result in results:
-        if result:
-            hsi_results[result[0]] = result[1]
-            hsi_frames.append(result[2])
+    hsi_frames = [result for result in results if result is not None]
 
     if hsi_frames:
-        save_hsi_forecast(pd.concat(hsi_frames, ignore_index=True), species=species)
+        df_hsi = pd.concat(hsi_frames, ignore_index=True)
+        save_hsi_forecast(df_hsi, species=species)
+        return df_hsi
 
-    return hsi_results
+    return pd.DataFrame()
+
+
+def load_map_hsi(species, year, quarter):
+    """Load one map period from the persisted HSI forecast CSV."""
+    df_hsi = load_hsi_forecast()
+    required_cols = {"Station", "year", "quarter", "species", "HSI", "HSI_Level"}
+    if df_hsi.empty or not required_cols.issubset(df_hsi.columns):
+        return {}
+
+    year_values = pd.to_numeric(df_hsi["year"], errors="coerce")
+    quarter_values = pd.to_numeric(df_hsi["quarter"], errors="coerce")
+    species_values = df_hsi["species"].astype(str).str.lower()
+    period_hsi = df_hsi[
+        (year_values == int(year))
+        & (quarter_values == int(quarter))
+        & (species_values == species.lower())
+    ].copy()
+
+    if period_hsi.empty:
+        return {}
+
+    period_hsi = period_hsi.drop_duplicates(subset=["Station"], keep="last")
+    return period_hsi.set_index("Station")[["HSI", "HSI_Level"]].to_dict("index")
 
 
 # Load data
@@ -176,10 +189,14 @@ st.subheader("⚙️ Cài đặt hiển thị bản đồ")
 col_year, col_quarter = st.columns([2, 1])
 
 with col_year:
+    end_period_index = (
+        int(start_year) * 4 + (int(start_quarter) - 1) + int(n_quarters) - 1
+    )
+    end_year = end_period_index // 4
     map_year = st.number_input(
         "Năm bắt đầu",
         min_value=start_year,
-        max_value=start_year + n_quarters - 1,
+        max_value=end_year,
         value=start_year,
         step=1,
     )
@@ -187,14 +204,15 @@ with col_year:
 with col_quarter:
     map_quarter = st.selectbox("Chọn quý để hiển thị:", options=[1, 2, 3, 4], index=0)
 # Check if map display time is valid
-start_timeline = (start_year * 4) + start_quarter
-map_timeline = (map_year * 4) + map_quarter
+start_timeline = (start_year * 4) + (start_quarter - 1)
+end_timeline = start_timeline + n_quarters - 1
+map_timeline = (map_year * 4) + (map_quarter - 1)
 
-if map_timeline < start_timeline:
+if map_timeline < start_timeline or map_timeline > end_timeline:
     st.error(
         f"❌ **Thời gian hiển thị không hợp lệ!** "
-        f"Mốc thời gian được chọn (Q{map_quarter}/{map_year}) nhỏ hơn thời gian bắt đầu cấu hình dự báo (Q{start_quarter}/{start_year}). "
-        f"Vui lòng chọn mốc thời gian bằng hoặc lớn hơn."
+        f"Mốc Q{map_quarter}/{map_year} nằm ngoài {n_quarters} quý dự báo "
+        f"bắt đầu từ Q{start_quarter}/{start_year}."
     )
 
 st.info(
@@ -205,17 +223,31 @@ st.info(
 # Load radius data based on selected species
 df_radius = load_radius_data(species)
 
-# Calculate HSI for all stations ONLY if forecast is triggered
-hsi_data = {}
+# Calculate and persist all requested periods only when forecast is triggered.
 if st.session_state.forecast_triggered:
-    with st.spinner("Đang tính toán HSI cho các trạm..."):
+    with st.spinner(
+        f"Đang tính và lưu HSI cho tất cả trạm trong {n_quarters} quý..."
+    ):
         stations_unique = df[["Station", "X", "Y"]].drop_duplicates()
-        hsi_data = calculate_hsi_for_all_stations(
-            species, map_year, map_quarter, stations_unique
+        forecast_hsi = calculate_hsi_for_all_stations(
+            species,
+            start_year,
+            start_quarter,
+            n_quarters,
+            stations_unique,
         )
     st.session_state.forecast_triggered = False
-    st.session_state.has_data = True
-    st.session_state.hsi_data = hsi_data
+    st.session_state.has_data = not forecast_hsi.empty
+    if forecast_hsi.empty:
+        st.error("Không tạo được dữ liệu HSI cho khoảng dự báo đã chọn.")
+    else:
+        st.success(
+            f"Đã lưu {len(forecast_hsi)} bản ghi HSI vào hsi_forecast_merged.csv."
+        )
+
+# The map always reads the persisted CSV for its selected period.
+hsi_data = load_map_hsi(species, map_year, map_quarter)
+map_has_hsi = bool(hsi_data)
 
 # Create Folium map
 center_lat = stations["lat"].mean()
@@ -288,9 +320,9 @@ for idx, row in stations.iterrows():
     hsi_tooltip = ""
     marker_color = "#C81E1E"  # Default red
 
-    if st.session_state.get("has_data") and row["Station"] in st.session_state.hsi_data:
-        hsi_value = st.session_state.hsi_data[row["Station"]]["HSI"]
-        hsi_level = st.session_state.hsi_data[row["Station"]]["HSI_Level"]
+    if row["Station"] in hsi_data:
+        hsi_value = hsi_data[row["Station"]]["HSI"]
+        hsi_level = hsi_data[row["Station"]]["HSI_Level"]
 
         hsi_info = f"""
         <p style='margin: 5px 0;'><b>HSI (Q{map_quarter}/{map_year}):</b> {hsi_value:.3f}</p>
@@ -336,7 +368,7 @@ for idx, row in stations.iterrows():
     ).add_to(m)
 
 # Add legend to map
-if st.session_state.has_data:
+if map_has_hsi:
     legend_html = """
     <div style="
         position: absolute;
@@ -360,9 +392,11 @@ if st.session_state.has_data:
     """
 
     m.get_root().html.add_child(folium.Element(legend_html))
-elif not st.session_state.has_data:
-    # Show placeholder message
-    st.warning("⚠️ Bấm nút '🚀 Tính toán dự báo' ở trên để hiển thị bản đồ")
+else:
+    st.warning(
+        f"⚠️ Chưa có dữ liệu HSI trong CSV cho {species_display}, "
+        f"Q{map_quarter}/{map_year}. Hãy bấm '🚀 Tính toán dự báo'."
+    )
 
 # Initialize session state for selected station FIRST
 if "selected_station" not in st.session_state:
