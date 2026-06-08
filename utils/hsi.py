@@ -3,6 +3,59 @@ import pandas as pd
 import pathlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+import threading
+
+try:
+    from utils.r_hsi import compute_r_hsi
+except ImportError:
+    from r_hsi import compute_r_hsi
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent
+PROJECT_DIR = BASE_DIR.parent
+HSI_FORECAST_PATH = (
+    PROJECT_DIR
+    / "data"
+    / "data_quang_ninh"
+    / "qn_trained_data"
+    / "hsi_forecast_merged.csv"
+)
+
+HSI_FORECAST_COLUMNS = [
+    "Station",
+    "Station_Name",
+    "Quarter",
+    "year",
+    "quarter",
+    "species",
+    "X",
+    "Y",
+    "DO",
+    "Temperature",
+    "pH",
+    "Salinity",
+    "NH3",
+    "PO4",
+    "H2S",
+    "BOD5",
+    "COD",
+    "TSS",
+    "Coliform",
+    "Alkalinity",
+    "Transparency",
+    "CN",
+    "As",
+    "Cd",
+    "Pb",
+    "Cu",
+    "Hg",
+    "Zn",
+    "Total_Cr",
+    "HSI",
+    "HSI_Level",
+    "r_hsi",
+]
+
+hsi_forecast_lock = threading.RLock()
 
 def compute_hsi(df_forecast, species):
     """
@@ -21,50 +74,49 @@ def compute_hsi(df_forecast, species):
     """
     HSI_RULES = {
         "oyster": {
-            "DO":          {"min_val": 5},
+            "DO": {"min_val": 5},
             "Temperature": {"low": 20, "high": 28},
-            "pH":          {"low": 7.5, "high": 8.0},
-            "Salinity":    {"low": 20, "high": 25},
-            "Alkalinity":  {"low": 60, "high": 180},
-            "Transparency":{"low": 20, "high": 50},
-            "NH3":         {"max_val": 0.3},
-            "H2S":         {"max_val": 0.05},
-            "BOD5":        {"max_val": 50},
-            "COD":         {"max_val": 150},
-            "Coliform":    {"max_val": 5000},
-            "TSS":         {"max_val": 50},
-            "CN":          {"max_val": 0.1},
-            "As":          {"max_val": 0.02},
-            "Cd":          {"max_val": 0.005},
-            "Pb":          {"max_val": 0.05},
-            "Cu":          {"max_val": 0.2},
-            "Hg":          {"max_val": 0.001},
-            "Zn":          {"max_val": 0.5},
-            "Total_Cr":    {"max_val": 0.1},
+            "pH": {"low": 7.5, "high": 8.0},
+            "Salinity": {"low": 20, "high": 25},
+            "Alkalinity": {"low": 60, "high": 180},
+            "Transparency": {"low": 20, "high": 50},
+            "NH3": {"max_val": 0.3},
+            "H2S": {"max_val": 0.05},
+            "BOD5": {"max_val": 50},
+            "COD": {"max_val": 150},
+            "Coliform": {"max_val": 5000},
+            "TSS": {"max_val": 50},
+            "CN": {"max_val": 0.1},
+            "As": {"max_val": 0.02},
+            "Cd": {"max_val": 0.005},
+            "Pb": {"max_val": 0.05},
+            "Cu": {"max_val": 0.2},
+            "Hg": {"max_val": 0.001},
+            "Zn": {"max_val": 0.5},
+            "Total_Cr": {"max_val": 0.1},
         },
-
         "cobia": {
-            "DO":          {"min_val": 6},
+            "DO": {"min_val": 6},
             "Temperature": {"low": 24, "high": 28},
-            "pH":          {"low": 8.0, "high": 8.5},
-            "Salinity":    {"low": 27, "high": 33},
-            "Alkalinity":  {"low": 60, "high": 180},
-            "Transparency":{"low": 20, "high": 50},
-            "NH3":         {"max_val": 0.1},
-            "PO4":         {"max_val": 0.2},
-            "BOD5":        {"max_val": 50},
-            "COD":         {"max_val": 150},
-            "Coliform":    {"max_val": 5000},
-            "TSS":         {"max_val": 50},
-            "CN":          {"max_val": 0.1},
-            "As":          {"max_val": 0.02},
-            "Cd":          {"max_val": 0.005},
-            "Pb":          {"max_val": 0.05},
-            "Cu":          {"max_val": 0.2},
-            "Hg":          {"max_val": 0.001},
-            "Zn":          {"max_val": 0.5},
-            "Total_Cr":    {"max_val": 0.1},
-        }
+            "pH": {"low": 8.0, "high": 8.5},
+            "Salinity": {"low": 27, "high": 33},
+            "Alkalinity": {"low": 60, "high": 180},
+            "Transparency": {"low": 20, "high": 50},
+            "NH3": {"max_val": 0.1},
+            "PO4": {"max_val": 0.2},
+            "BOD5": {"max_val": 50},
+            "COD": {"max_val": 150},
+            "Coliform": {"max_val": 5000},
+            "TSS": {"max_val": 50},
+            "CN": {"max_val": 0.1},
+            "As": {"max_val": 0.02},
+            "Cd": {"max_val": 0.005},
+            "Pb": {"max_val": 0.05},
+            "Cu": {"max_val": 0.2},
+            "Hg": {"max_val": 0.001},
+            "Zn": {"max_val": 0.5},
+            "Total_Cr": {"max_val": 0.1},
+        },
     }
 
     def _suitability_score(x, low=None, high=None, max_val=None, min_val=None):
@@ -89,7 +141,6 @@ def compute_hsi(df_forecast, species):
             return min(1.0, x / min_val)
 
         return 0.0
-
 
     species = species.lower()
     if species not in HSI_RULES:
@@ -139,18 +190,101 @@ def compute_hsi(df_forecast, species):
 
     return df
 
+
+def _add_quarter_date_column(df):
+    df = df.copy()
+    if "Quarter" in df.columns:
+        df["Quarter"] = pd.to_datetime(df["Quarter"], errors="coerce").dt.strftime(
+            "%Y-%m-%d"
+        )
+        return df
+
+    if {"year", "quarter"}.issubset(df.columns):
+        year = pd.to_numeric(df["year"], errors="coerce")
+        quarter = pd.to_numeric(df["quarter"], errors="coerce")
+        month = (quarter - 1) * 3 + 1
+        quarter_date = (
+            year.astype("Int64").astype(str)
+            + "-"
+            + month.astype("Int64").astype(str).str.zfill(2)
+            + "-01"
+        )
+        df["Quarter"] = pd.to_datetime(quarter_date, errors="coerce").dt.strftime(
+            "%Y-%m-%d"
+        )
+
+    return df
+
+
+def prepare_hsi_forecast_for_save(df_hsi, species):
+    """
+    Chuan hoa output HSI forecast thanh mot dong day du:
+    1 tram + 1 quy + 1 loai = 1 ban ghi.
+    """
+    if df_hsi is None or df_hsi.empty:
+        return pd.DataFrame(columns=HSI_FORECAST_COLUMNS)
+
+    df = _add_quarter_date_column(df_hsi)
+    df["species"] = species.lower()
+
+    for c in ["year", "quarter"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
+
+    ordered_cols = [c for c in HSI_FORECAST_COLUMNS if c in df.columns]
+    extra_cols = [c for c in df.columns if c not in ordered_cols]
+    return df[ordered_cols + extra_cols]
+
+
+def load_hsi_forecast(path=HSI_FORECAST_PATH):
+    path = pathlib.Path(path)
+    if not path.exists() or path.stat().st_size == 0:
+        return pd.DataFrame(columns=HSI_FORECAST_COLUMNS)
+    return pd.read_csv(path)
+
+
+def save_hsi_forecast(df_hsi, species, path=HSI_FORECAST_PATH):
+    """
+    Append ket qua HSI forecast vao file merge va ghi de ban ghi trung khoa.
+    Khoa: X, Y, year, quarter, species.
+    """
+    df_new = prepare_hsi_forecast_for_save(df_hsi, species)
+    if df_new.empty:
+        return pathlib.Path(path)
+
+    path = pathlib.Path(path)
+    with hsi_forecast_lock:
+        df_old = load_hsi_forecast(path)
+        df_combined = pd.concat([df_old, df_new], ignore_index=True)
+
+        if "species" in df_combined.columns:
+            df_combined["species"] = df_combined["species"].str.lower()
+
+        key_cols = ["X", "Y", "year", "quarter", "species"]
+        if all(c in df_combined.columns for c in key_cols):
+            df_combined = df_combined.drop_duplicates(subset=key_cols, keep="last")
+
+        ordered_cols = [c for c in HSI_FORECAST_COLUMNS if c in df_combined.columns]
+        extra_cols = [c for c in df_combined.columns if c not in ordered_cols]
+        df_combined = df_combined[ordered_cols + extra_cols]
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df_combined.to_csv(path, index=False)
+
+    return path
+
+
 if __name__ == "__main__":
     # Test / plot phân phối HSI (chỉ chạy khi chạy file trực tiếp, không chạy khi import)
-    BASE_DIR = pathlib.Path(__file__).resolve().parent
-    PROJECT_DIR = BASE_DIR.parent
     DATA_PATH = PROJECT_DIR / "data" / "data_quang_ninh" / "qn_env_clean_ready.csv"
 
     # ===== COMPUTE HSI CHO TOÀN BỘ DỮ LIỆU VÀ TÍNH PHÂN PHỐI NHÃN HSI =====
     df = pd.read_csv(DATA_PATH)
 
     df_hsi = compute_hsi(df, species="cobia")
+    df_hsi = compute_r_hsi(df_hsi)
 
-    print(df_hsi[["Station", "Quarter", "HSI", "HSI_Level"]].head())
+    print(df_hsi[["Station", "Quarter", "HSI", "HSI_Level", "r_hsi"]].head())
 
     counts = df_hsi["HSI_Level"].value_counts()
     percent = df_hsi["HSI_Level"].value_counts(normalize=True) * 100
@@ -184,15 +318,27 @@ if __name__ == "__main__":
         kde=True,
         stat="density",
         color="steelblue",
-        edgecolor="black"
+        edgecolor="black",
     )
 
     plt.axvline(0.5, color="gray", linestyle="--", linewidth=1, label="HSI = 0.5")
     plt.axvline(0.75, color="orange", linestyle="--", linewidth=1, label="HSI = 0.75")
     plt.axvline(0.85, color="green", linestyle="--", linewidth=1, label="HSI = 0.85")
 
-    plt.axvline(min_hsi, color="red", linestyle=":", linewidth=1.5, label=f"Min HSI = {min_hsi:.3f}")
-    plt.axvline(max_hsi, color="purple", linestyle=":", linewidth=1.5, label=f"Max HSI = {max_hsi:.3f}")
+    plt.axvline(
+        min_hsi,
+        color="red",
+        linestyle=":",
+        linewidth=1.5,
+        label=f"Min HSI = {min_hsi:.3f}",
+    )
+    plt.axvline(
+        max_hsi,
+        color="purple",
+        linestyle=":",
+        linewidth=1.5,
+        label=f"Max HSI = {max_hsi:.3f}",
+    )
 
     plt.title("Distribution of HSI values (Cobia)", fontsize=13)
     plt.xlabel("HSI")
@@ -218,7 +364,7 @@ if __name__ == "__main__":
         delta_hsi_example,
         color="black",
         linewidth=1.5,
-        label="|ΔHSI|"
+        label="|ΔHSI|",
     )
 
     plt.axhline(0.6 * sigma_hsi, color="green", linestyle="--", label="0.6σ threshold")
