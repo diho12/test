@@ -5,71 +5,67 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-def distance_vn2000_km(x1, y1, x2, y2):
-    """
-    Khoảng cách không gian cho hệ VN2000 (m → km)
-    """
+def distance_vn2000_km(x1: float, y1: float, x2: float, y2: float) -> float:
+    """Khoảng cách không gian cho hệ VN2000 (m → km)"""
     return np.sqrt((x1 - x2)**2 + (y1 - y2)**2) / 1000.0
-
-def hsi_label(h):
-    if h >= 0.85:
-        return "very_suitable"
-    elif h >= 0.75:
-        return "suitable"
-    elif h >= 0.5:
-        return "less_suitable"
-    else:
-        return "not_suitable"
-    
-HSI_LABEL_ORDER = {
-    "not_suitable": 0,
-    "less_suitable": 1,
-    "suitable": 2,
-    "very_suitable": 3
-}
 
 
 def compute_local_R_for_station_quarter(
-    df_quarter,
-    station_id,
-    max_dist_km=30,
-    bin_km=1.0,
-    alpha=0.6
-):
+    df_quarter: pd.DataFrame,
+    station_id: str,
+    max_dist_km: float = 30.0,
+    bin_km: float = 1.0,
+    alpha: float = 0.6,
+    max_empty_gap_km: float = 3.0
+) -> float:
+    """
+    Tính bán kính hoạt động (r_hsi) cho một trạm trong một quý cụ thể.
+    """
     # ---- 1. Lấy trạm trung tâm ----
-    center = df_quarter[df_quarter["station"] == station_id]
+    center = df_quarter[df_quarter["Station"] == station_id]
     if center.empty:
         return np.nan
     center = center.iloc[0]
 
-    center_hsi = center.hsi
-    center_label = hsi_label(center_hsi)
+    center_hsi = center.get("HSI")
+    center_label = center.get("HSI_Level")
+    
+    if pd.isna(center_hsi) or pd.isna(center_label):
+        return np.nan
 
     # ---- 2. Tính ngưỡng ΔHSI theo toàn quý ----
-    sigma_hsi = df_quarter["hsi"].std()
-    if pd.isna(sigma_hsi) or sigma_hsi == 0:
+    sigma_hsi = df_quarter["HSI"].std()
+    if pd.isna(sigma_hsi):
         return np.nan
+    if sigma_hsi == 0:
+        return float(max_dist_km)
 
     delta_hsi_threshold = alpha * sigma_hsi
 
     # ---- 3. Thu thập trạm lân cận ----
     records = []
+    min_dist_to_any_station = float('inf')
+    
     for _, r in df_quarter.iterrows():
-        if r["station"] == station_id:
+        if r["Station"] == station_id:
             continue
 
-        d = distance_vn2000_km(center.x, center.y, r.x, r.y)
+        d = distance_vn2000_km(center["X"], center["Y"], r["X"], r["Y"])
+        
+        if d < min_dist_to_any_station:
+            min_dist_to_any_station = d
+                
         if d > max_dist_km:
             continue
 
         records.append({
             "dist_km": d,
-            "delta_hsi": abs(center_hsi - r.hsi),
-            "label": hsi_label(r.hsi)
+            "delta_hsi": abs(center_hsi - r["HSI"]),
+            "label": r["HSI_Level"]
         })
 
     if not records:
-        return np.nan
+        return 0.5
 
     tmp = pd.DataFrame(records)
 
@@ -83,10 +79,17 @@ def compute_local_R_for_station_quarter(
 
     # ---- 5. Mở rộng R từng vòng, KHÔNG cho lẫn nhãn ----
     last_valid_R = 0.0
+    empty_gap_count = 0
+    max_empty_bins = max(1, int(max_empty_gap_km / bin_km))
 
     for dist_bin, g in tmp.groupby("dist_bin", observed=True):
         if g.empty:
+            empty_gap_count += 1
+            if empty_gap_count >= max_empty_bins:
+                break
             continue
+            
+        empty_gap_count = 0
 
         # Điều kiện 1: ΔHSI trung bình vượt ngưỡng
         if g["delta_hsi"].mean() >= delta_hsi_threshold:
@@ -99,26 +102,48 @@ def compute_local_R_for_station_quarter(
         last_valid_R = dist_bin.right
 
     # ---- 6. Ép R trong khoảng hợp lệ ----
-    return min(max_dist_km, max(last_valid_R, 0.5))
+    final_R = min(max_dist_km, max(last_valid_R, 0.5))
+    
+    # Giới hạn R không vượt quá một nửa khoảng cách tới trạm GẦN NHẤT
+    # để đảm bảo tuyệt đối không có 2 đường tròn nào bị giao cắt nhau.
+    if min_dist_to_any_station != float('inf'):
+        final_R = min(final_R, min_dist_to_any_station / 2.0)
+        
+    return max(final_R, 0.1)
 
-def compute_R_for_all_stations_all_quarters(
-    hsi_csv_path,
-    max_dist_km=30,
-    bin_km=1.0,
-    alpha=0.6
-):
-    df = pd.read_csv(hsi_csv_path)
 
-    required = {"station", "x", "y", "year", "quarter", "hsi"}
-    if not required.issubset(df.columns):
-        raise ValueError(f"File HSI phải có các cột: {required}")
+def compute_r_hsi(
+    df_hsi: pd.DataFrame,
+    max_dist_km: float = 30.0,
+    bin_km: float = 1.0,
+    alpha: float = 0.6
+) -> pd.DataFrame:
+    """
+    Tính bán kính r_hsi cho toàn bộ DataFrame chứa kết quả dự báo HSI.
+    Tự động nhóm theo quý và năm để tính cho từng trạm trong cùng thời điểm.
+    """
+    df = df_hsi.copy()
+    
+    # Handle Quarter string if year and quarter are not present
+    if "year" not in df.columns or "quarter" not in df.columns:
+        if "Quarter" in df.columns:
+            dt = pd.to_datetime(df["Quarter"], errors="coerce")
+            df["year"] = dt.dt.year
+            df["quarter"] = dt.dt.quarter
+        else:
+            raise ValueError("DataFrame đầu vào phải có cột 'year' và 'quarter', hoặc 'Quarter'")
+            
+    required_cols = {"Station", "X", "Y", "year", "quarter", "HSI", "HSI_Level"}
+    missing_cols = required_cols - set(df.columns)
+    if missing_cols:
+        raise ValueError(f"DataFrame đầu vào thiếu các cột bắt buộc: {missing_cols}")
 
     results = []
 
     for (year, quarter), g in df.groupby(["year", "quarter"]):
         g = g.reset_index(drop=True)
 
-        for station in g["station"].unique():
+        for station in g["Station"].unique():
             R = compute_local_R_for_station_quarter(
                 df_quarter=g,
                 station_id=station,
@@ -126,35 +151,58 @@ def compute_R_for_all_stations_all_quarters(
                 bin_km=bin_km,
                 alpha=alpha
             )
-
-            row = g[g["station"] == station].iloc[0]
-
+            
             results.append({
-                "station": station,
-                "x": row.x,
-                "y": row.y,
-                "year": int(year),
-                "quarter": int(quarter),
-                "R_km": R
+                "Station": station,
+                "year": year,
+                "quarter": quarter,
+                "r_hsi": R
             })
 
-    return pd.DataFrame(results)
+    if results:
+        df_r = pd.DataFrame(results)
+        df = df.merge(df_r, on=["Station", "year", "quarter"], how="left")
+    else:
+        df["r_hsi"] = np.nan
+        
+    return df
 
 
-
-BASE_DIR = pathlib.Path(__file__).resolve().parent
-PROJECT_DIR = BASE_DIR.parent
-DATA_PATH = PROJECT_DIR / "data" / "data_quang_ninh" / "toa_do_qn.csv"
-OUT_DIR = PROJECT_DIR / "data" / "data_quang_ninh"
-
-# Cho hàu
-df_R_oyster = compute_R_for_all_stations_all_quarters(
-    hsi_csv_path=OUT_DIR / "hsi_oyster.csv",
-)
-df_R_oyster.to_csv(OUT_DIR / "R_oyster.csv", index=False)
-
-# Cho cá giò
-df_R_cobia = compute_R_for_all_stations_all_quarters(
-    hsi_csv_path=OUT_DIR / "hsi_cobia.csv",
-)
-df_R_cobia.to_csv(OUT_DIR / "R_cobia.csv", index=False)
+if __name__ == "__main__":
+    BASE_DIR = pathlib.Path(__file__).resolve().parent
+    PROJECT_DIR = BASE_DIR.parent
+    MERGED_HSI_PATH = PROJECT_DIR / "data" / "data_quang_ninh" / "qn_trained_data" / "hsi_forecast_merged.csv"
+    
+    if MERGED_HSI_PATH.exists():
+        df_merged = pd.read_csv(MERGED_HSI_PATH)
+        print(f"Đã tải {len(df_merged)} bản ghi từ {MERGED_HSI_PATH.name}")
+        
+        if "r_hsi" in df_merged.columns:
+            print("\nCột 'r_hsi' đã tồn tại. Đang tạo thống kê và biểu đồ...")
+            # Thống kê cơ bản
+            print(df_merged[["Station", "year", "quarter", "HSI", "r_hsi"]].head())
+            print("\nThống kê mô tả r_hsi:")
+            print(df_merged["r_hsi"].describe())
+            
+            # Vẽ biểu đồ phân phối r_hsi
+            plt.figure(figsize=(8, 5))
+            r_hsi_values = df_merged["r_hsi"].dropna()
+            
+            if not r_hsi_values.empty:
+                sns.histplot(r_hsi_values, bins=20, kde=True, color="teal")
+                plt.title("Distribution of r_hsi (km)")
+                plt.xlabel("r_hsi (km)")
+                plt.ylabel("Count")
+                
+                OUT_FIG = PROJECT_DIR / "figure"
+                OUT_FIG.mkdir(exist_ok=True)
+                fig_path = OUT_FIG / "r_hsi_distribution.png"
+                plt.savefig(fig_path, dpi=300)
+                plt.close()
+                print(f"📊 Đã lưu biểu đồ phân phối r_hsi tại: {fig_path}")
+            else:
+                print("Tất cả giá trị r_hsi đều là NaN, không thể vẽ biểu đồ.")
+        else:
+            print("Cột 'r_hsi' chưa được tính toán trong file này.")
+    else:
+        print(f"Không tìm thấy file: {MERGED_HSI_PATH}")

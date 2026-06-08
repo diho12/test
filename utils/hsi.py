@@ -5,6 +5,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import threading
 
+try:
+    from utils.r_hsi import compute_r_hsi
+except ImportError:
+    from r_hsi import compute_r_hsi
+
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 HSI_FORECAST_PATH = (
@@ -47,6 +52,7 @@ HSI_FORECAST_COLUMNS = [
     "Total_Cr",
     "HSI",
     "HSI_Level",
+    "r_hsi",
 ]
 
 hsi_forecast_lock = threading.RLock()
@@ -276,8 +282,9 @@ if __name__ == "__main__":
     df = pd.read_csv(DATA_PATH)
 
     df_hsi = compute_hsi(df, species="cobia")
+    df_hsi = compute_r_hsi(df_hsi)
 
-    print(df_hsi[["Station", "Quarter", "HSI", "HSI_Level"]].head())
+    print(df_hsi[["Station", "Quarter", "HSI", "HSI_Level", "r_hsi"]].head())
 
     counts = df_hsi["HSI_Level"].value_counts()
     percent = df_hsi["HSI_Level"].value_counts(normalize=True) * 100

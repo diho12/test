@@ -45,16 +45,7 @@ def load_data():
     return df
 
 
-@st.cache_data
-def load_radius_data(species):
-    """Load radius data for the specified species"""
-    try:
-        filename = f"data/data_quang_ninh/R_{species}.csv"
-        df_radius = pd.read_csv(filename)
-        return df_radius
-    except FileNotFoundError:
-        st.warning(f"Không tìm thấy file {filename}")
-        return None
+
 
 
 # ==================== CALCULATE HSI ====================
@@ -92,6 +83,13 @@ def calculate_hsi_for_all_stations(
 
     if hsi_frames:
         df_hsi = pd.concat(hsi_frames, ignore_index=True)
+        try:
+            from utils.r_hsi import compute_r_hsi
+            df_hsi = compute_r_hsi(df_hsi)
+        except Exception as e:
+            print(f"Lỗi tính r_hsi: {e}")
+            pass
+            
         save_hsi_forecast(df_hsi, species=species)
         return df_hsi
 
@@ -118,7 +116,10 @@ def load_map_hsi(species, year, quarter):
         return {}
 
     period_hsi = period_hsi.drop_duplicates(subset=["Station"], keep="last")
-    return period_hsi.set_index("Station")[["HSI", "HSI_Level"]].to_dict("index")
+    cols_to_dict = ["HSI", "HSI_Level"]
+    if "r_hsi" in period_hsi.columns:
+        cols_to_dict.append("r_hsi")
+    return period_hsi.set_index("Station")[cols_to_dict].to_dict("index")
 
 
 # Load data
@@ -220,8 +221,7 @@ st.info(
     f"Vòng tròn xanh = vùng áp dụng kết quả. Chi tiết từng trạm sẽ hiển thị chuỗi {n_quarters} quý từ Q{start_quarter}/{start_year}."
 )
 
-# Load radius data based on selected species
-df_radius = load_radius_data(species)
+
 
 # Calculate and persist all requested periods only when forecast is triggered.
 if st.session_state.forecast_triggered:
@@ -262,27 +262,11 @@ m = folium.Map(
 )
 
 # Add radius circles first (so they appear below markers)
-if df_radius is not None:
-    # Filter radius data for the selected map display period
-    radius_filtered = df_radius[
-        (df_radius["year"] == map_year) & (df_radius["quarter"] == map_quarter)
-    ].copy()
-
-    # Merge with station coordinates
-    radius_filtered = radius_filtered.merge(
-        stations[["Station", "lat", "lon"]],
-        left_on="station",
-        right_on="Station",
-        how="left",
-    )
-
-    # Add circles for each station
-    for idx, row in radius_filtered.iterrows():
-        if pd.notna(row["lat"]) and pd.notna(row["lon"]) and pd.notna(row["R_km"]):
-            # Convert km to meters for folium Circle
-            radius_m = row["R_km"] * 1000
-
-            # Create circle
+for idx, row in stations.iterrows():
+    if row["Station"] in hsi_data and "r_hsi" in hsi_data[row["Station"]]:
+        r_km = hsi_data[row["Station"]]["r_hsi"]
+        if pd.notna(row["lat"]) and pd.notna(row["lon"]) and pd.notna(r_km):
+            radius_m = r_km * 1000
             folium.Circle(
                 location=[row["lat"], row["lon"]],
                 radius=radius_m,
@@ -293,27 +277,20 @@ if df_radius is not None:
                 weight=2,
                 opacity=0.5,
                 popup=folium.Popup(
-                    f"<b>{row['station']}</b><br>Bán kính: {row['R_km']} km<br>Q{row['quarter']}/{row['year']}",
+                    f"<b>{row['Station']}</b><br>Bán kính: {r_km:.1f} km<br>Q{map_quarter}/{map_year}",
                     max_width=200,
                 ),
-                tooltip=f"{row['station']}: R = {row['R_km']} km",
+                tooltip=f"{row['Station']}: R = {r_km:.1f} km",
             ).add_to(m)
 
 # Add markers for each station (on top of circles)
 for idx, row in stations.iterrows():
     # Get radius info if available
     radius_info = ""
-    if df_radius is not None:
-        station_radius = df_radius[
-            (df_radius["station"] == row["Station"])
-            & (df_radius["year"] == map_year)
-            & (df_radius["quarter"] == map_quarter)
-        ]
-        if len(station_radius) > 0:
-            r_km = station_radius.iloc[0]["R_km"]
-            radius_info = (
-                f"<p style='margin: 5px 0;'><b>Bán kính áp dụng:</b> {r_km} km</p>"
-            )
+    if row["Station"] in hsi_data and "r_hsi" in hsi_data[row["Station"]]:
+        r_km = hsi_data[row["Station"]]["r_hsi"]
+        if pd.notna(r_km):
+            radius_info = f"<p style='margin: 5px 0;'><b>Bán kính áp dụng:</b> {r_km:.1f} km</p>"
 
     # Get HSI info if available
     hsi_info = ""
@@ -549,24 +526,30 @@ if (
 
             # Calculate HSI using compute_hsi
             forecast_with_hsi = compute_hsi(forecast_df, species=species)
-            save_hsi_forecast(forecast_with_hsi, species=species)
 
-            # Get radius information for each forecasted quarter
-            if df_radius is not None:
-                radius_info_list = []
+            # Get radius information from merged file BEFORE saving, to avoid overwriting with NaN
+            merged_hsi = load_hsi_forecast()
+            radius_info_list = []
+            if not merged_hsi.empty and "r_hsi" in merged_hsi.columns:
                 for idx, row in forecast_with_hsi.iterrows():
-                    station_radius = df_radius[
-                        (df_radius["station"] == selected_station)
-                        & (df_radius["year"] == int(row["year"]))
-                        & (df_radius["quarter"] == int(row["quarter"]))
+                    station_radius = merged_hsi[
+                        (merged_hsi["Station"] == selected_station)
+                        & (merged_hsi["year"] == int(row["year"]))
+                        & (merged_hsi["quarter"] == int(row["quarter"]))
+                        & (merged_hsi["species"] == species.lower())
                     ]
                     if len(station_radius) > 0:
-                        radius_info_list.append(station_radius.iloc[0]["R_km"])
+                        radius_info_list.append(station_radius.iloc[-1]["r_hsi"])
                     else:
-                        radius_info_list.append(
-                            np.nan
-                        )  # Use np.nan instead of None for consistency
-                forecast_with_hsi["R_km"] = radius_info_list
+                        radius_info_list.append(np.nan)
+            else:
+                for _ in range(len(forecast_with_hsi)):
+                    radius_info_list.append(np.nan)
+            
+            forecast_with_hsi["r_hsi"] = radius_info_list
+            forecast_with_hsi["R_km"] = radius_info_list
+            
+            save_hsi_forecast(forecast_with_hsi, species=species)
 
             # Format results for display
             hsi_results = []
