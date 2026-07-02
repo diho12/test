@@ -23,7 +23,7 @@ st.title("🌊 Dự báo môi trường nước cho Cá giò và Hàu khu vực 
 # Load data of Quảng Ninh
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data/data_quang_ninh/qn_env_clean_ready.csv")
+    df = pd.read_csv(project_root / "data" / "data_quang_ninh" / "qn_env_clean_ready.csv")
 
     # Convert Quarter column to datetime
     if "Quarter" in df.columns:
